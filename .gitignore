@@ -1,0 +1,20 @@
+# Node
+node_modules/
+dist/
+.vite/
+*.log
+
+# Python
+backend/.venv/
+__pycache__/
+*.pyc
+
+# Env/Secrets
+.env
+*.env
+.env.local
+
+# OS/IDE
+.DS_Store
+Thumbs.db
+.vscode/
