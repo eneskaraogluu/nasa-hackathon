@@ -1,73 +1,182 @@
-# React + TypeScript + Vite
+# 🪐 A World Away: Yapay Zekâ ile Ötegezegen Avı
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+> **NASA Space Apps Challenge 2025**  
+> Görev: [A World Away – Hunting for Exoplanets with AI](https://www.spaceappschallenge.org/2025/challenges/a-world-away-hunting-for-exoplanets-with-ai/)  
+> Takım: **Enes Karaoğlu & Takım Arkadaşları**
 
-Currently, two official plugins are available:
+---
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) (or [oxc](https://oxc.rs) when used in [rolldown-vite](https://vite.dev/guide/rolldown)) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+## 🌌 Proje Hakkında
 
-## React Compiler
+**“A World Away”** görevinin amacı, **yapay zekâ** kullanarak **ötegezegenleri (exoplanet)** tespit etmektir — yani Güneş Sistemi dışındaki yıldızların etrafında dönen gezegenleri keşfetmek.
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+Bu proje, **Kepler** ve **TESS** görevlerinden elde edilen ışık eğrisi (light curve) verilerini analiz ederek, olası gezegen geçişlerini belirleyen **makine öğrenimi tabanlı bir web platformu** geliştirmeyi amaçlar.  
 
-## Expanding the ESLint configuration
+Uygulama iki katmandan oluşur:  
+- **Backend (FastAPI)** → Yapay zekâ modeliyle tahmin yapan API.  
+- **Frontend (React + TypeScript)** → Kullanıcıların veri yükleyip sonucu görselleştirebildiği arayüz.
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
+---
 
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
+## 🚀 Projenin Özellikleri
 
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
+✅ **Yapay zekâ tabanlı tespit** – Kepler ve TESS verileriyle eğitilmiş rastgele orman (Random Forest) modelleri.  
+✅ **Etkileşimli web arayüzü** – React, TypeScript ve TailwindCSS ile geliştirilmiş modern UI.  
+✅ **Gerçek zamanlı API** – FastAPI altyapısı sayesinde hızlı tahmin ve veri iletişimi.  
+✅ **Veri görselleştirme** – Model sonuçlarını ve güven oranlarını kullanıcıya grafiklerle sunar.  
+✅ **Modüler mimari** – Frontend ve backend tamamen ayrı çalışabilir şekilde tasarlanmıştır.
 
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+---
+
+## 🧠 Mimari Yapı
+
+```
+root/
+│
+├── backend/
+│   ├── server.py                   # FastAPI sunucusu (AI tahmin API’si)
+│   ├── flexible_exoplanet_model.pkl # Genel model
+│   ├── random_forest_kepler_model.pkl
+│   ├── tess_random_forest_model.pkl
+│   ├── kepler_X_aligned.csv        # Eğitim verisi
+│   ├── requirements.txt            # Python bağımlılıkları
+│
+├── src/                            # Frontend (React + TypeScript)
+│   ├── components/
+│   ├── pages/
+│   ├── App.tsx
+│   ├── main.tsx
+│
+├── public/                         # Statik dosyalar
+├── index.html
+├── package.json
+├── vite.config.ts
+├── tailwind.config.js
+└── tsconfig.json
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+---
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
+## ⚙️ Kurulum ve Çalıştırma
 
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+### 🖥️ Frontend (React + Vite)
+```bash
+# Bağımlılıkları yükle
+npm install
+
+# Geliştirme sunucusunu başlat
+npm run dev
 ```
+
+### 🧩 Backend (FastAPI + ML)
+```bash
+cd backend
+
+# Sanal ortam oluştur
+python -m venv .venv
+source .venv/Scripts/activate   # Windows için
+# veya
+source .venv/bin/activate       # macOS / Linux için
+
+# Gerekli kütüphaneleri yükle
+pip install -r requirements.txt
+
+# API sunucusunu başlat
+python server.py
+```
+
+---
+
+## 🧬 Yapay Zekâ Modelleri
+
+| Model Dosyası | Açıklama |
+|---------------|-----------|
+| `random_forest_kepler_model.pkl` | Kepler verileriyle eğitilmiş model |
+| `tess_random_forest_model.pkl` | TESS verileriyle eğitilmiş model |
+| `flexible_exoplanet_model.pkl` | Genel amaçlı birleşik model |
+| `kepler_X_aligned.csv` | Ön işlenmiş eğitim verisi |
+
+Modeller, yıldız parlaklığındaki değişimleri analiz ederek olası gezegen geçişlerini tahmin eden **Random Forest Sınıflandırıcıları** kullanır.
+
+---
+
+## 💻 Arayüz (Frontend)
+
+- **Kullanılan teknolojiler:** React, TypeScript, TailwindCSS, Vite  
+- **Özellikler:**
+  - Veri yükleme ve tahmin isteği gönderme  
+  - API’den gelen sonuçların gerçek zamanlı gösterimi  
+  - Model güven oranlarının görselleştirilmesi  
+
+---
+
+## 🌍 Teknoloji Yığını
+
+| Katman | Teknolojiler |
+|--------|---------------|
+| **Frontend** | React, TypeScript, TailwindCSS, Vite |
+| **Backend** | FastAPI, Python |
+| **Yapay Zekâ** | scikit-learn, pandas, joblib, numpy |
+| **Dağıtım** | (opsiyonel) Render, Vercel veya Hugging Face Spaces |
+
+---
+
+## 🧩 API Kullanım Örneği
+
+```python
+POST /predict
+Content-Type: application/json
+
+{
+  "flux_values": [0.98, 1.01, 0.97, 1.02, ...]
+}
+```
+
+**Yanıt:**
+```json
+{
+  "prediction": "Exoplanet Detected",
+  "confidence": 0.93
+}
+```
+
+---
+
+## 🎯 Gelecek Geliştirmeler
+
+- Daha yüksek doğruluk için **derin öğrenme (CNN / LSTM)** entegrasyonu  
+- **Grafiksel ışık eğrisi** gösterimleri (Plotly, Chart.js)  
+- **Kullanıcı verisi yükleme** özelliğiyle topluluk modeli oluşturma  
+- Projenin **bulut ortamında dağıtımı** (NASA uyumlu bulut servisi)
+
+---
+
+## 👥 Takım ve Katkılar
+
+| Üye | Rol | Sorumluluk |
+|------|-----|-------------|
+| **Enes Karaoğlu** | AI & Full Stack Developer | Backend modeli, API ve arayüz geliştirme |
+| Zehra Nur Bayav | Veri Bilimci | Model eğitimi ve veri ön işleme |
+| Resul Ekrem Altıntaş| Frontend Geliştirici | Arayüz ve kullanıcı deneyimi tasarımı |
+| Elif Gülneva Kara| Sunum hazırlama | Arayüz ve kullanıcı deneyimi tasarımı |
+
+---
+
+## 📜 Lisans
+
+Bu proje **MIT Lisansı** ile açık kaynak olarak paylaşılmıştır.  
+İsteyen herkes kodu inceleyebilir, düzenleyebilir ve geliştirebilir.
+
+---
+
+## 🪐 Teşekkürler
+
+- **NASA Exoplanet Archive**  
+- **Kepler ve TESS görevleri**  
+- **NASA Space Apps Challenge ekibi**
+
+> “Sadece gezegenleri bulmuyoruz — hayal gücünün ötesinde dünyaları keşfediyoruz.”
+
+---
+
+
