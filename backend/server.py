@@ -1,213 +1,205 @@
-# server.py
+"""
+NASA Space Apps Challenge 2025
+A World Away – Hunting for Exoplanets with AI
+Backend API: Exoplanet Predictor (FastAPI)
+
+Bu sunucu, Kepler ve TESS verilerinden eğitilmiş yapay zekâ modelleriyle 
+ötegezegen tespiti yapar. Kullanıcılar .csv dosyası yükleyerek olasılık tahmini alabilir.
+"""
+
 from fastapi import FastAPI, UploadFile, File, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 import io
 import pickle
+import gzip
 import pandas as pd
 import numpy as np
 from typing import List, Optional
 
-# === Model dosya yollarını buraya koy ===
-MODEL_PATH1 = "random_forest_kepler_model.pkl"    # Örn: Kepler modeli
-MODEL_PATH2 = "tess_random_forest_model.pkl"  # Örn: TESS modeli (varsa)
+# ==== MODEL YOLLARI ====
+MODEL_PATH1 = "random_forest_kepler_model.pkl"
+MODEL_PATH2 = "tess_random_forest_model.pkl"
 
-app = FastAPI(title="Exoplanet Predictor API")
+# ==== ÖZELLİK LİSTESİ ====
+CANDIDATE_FEATURES = [
+    "st_teff", "st_logg", "st_rad",
+    "st_dist", "pl_orbper", "pl_trandurh", "pl_trandep",
+    "pl_rade", "pl_insool", "pl_eqt", "Rp_Rs"
+]
 
+# ==== UYGULAMA ====
+app = FastAPI(
+    title="Exoplanet Predictor API",
+    description="Kepler ve TESS verilerinden ötegezegen tahmini yapan API.",
+    version="1.0.0"
+)
+
+# ==== CORS ====
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173", "*"],
-    allow_credentials=True,
+    allow_origins=["*"],
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
+# ==== MODEL YÜKLEYİCİ ====
+try:
+    import joblib
+except Exception:
+    joblib = None
+
+try:
+    import cloudpickle
+except Exception:
+    cloudpickle = None
+
+
 def _load_model(path: str):
+    """Modeli esnek biçimde yükler (joblib / cloudpickle / pickle)."""
     if not path:
         return None
-    try:
-        with open(path, "rb") as f:
-            return pickle.load(f)
-    except Exception as e:
-        # Yol boş değilse ama yüklenemiyorsa fail edelim ki gizli hatalar kalmasın
-        raise RuntimeError(f"Model yüklenemedi ({path}): {e}")
 
-# Modeller (en az bir tanesi olmalı)
-MODEL_1 = _load_model(MODEL_PATH1)
-MODEL_2 = _load_model(MODEL_PATH2) if MODEL_PATH2 else None
-MODELS = [m for m in [MODEL_1, MODEL_2] if m is not None]
-if len(MODELS) == 0:
-    raise RuntimeError("Hiç model yüklenemedi. Lütfen MODEL_PATH1/2 dosyalarını kontrol edin.")
+    for loader in (joblib, cloudpickle, pickle):
+        if loader is None:
+            continue
+        try:
+            with open(path, "rb") as f:
+                return loader.load(f)
+        except Exception:
+            # Gzip sıkıştırmalı dosyaları da dene
+            try:
+                with gzip.open(path, "rb") as f:
+                    return loader.load(f)
+            except Exception:
+                pass
 
+    raise RuntimeError(f"Model yüklenemedi: {path}")
+
+
+# ==== MODEL CACHE ====
+MODELS: Optional[List[object]] = None
+
+
+def _ensure_models_loaded():
+    """İlk istek geldiğinde modelleri yükler."""
+    global MODELS
+    if MODELS is None:
+        m1 = _load_model(MODEL_PATH1) if MODEL_PATH1 else None
+        m2 = _load_model(MODEL_PATH2) if MODEL_PATH2 else None
+        MODELS = [m for m in (m1, m2) if m is not None]
+        if not MODELS:
+            raise RuntimeError("Hiç model yüklenemedi. MODEL_PATH1/2 yollarını kontrol edin.")
+
+
+# ==== MODEL HESAPLAMA ====
 def _as_probability(model, X: np.ndarray) -> np.ndarray:
-    """Model türüne göre olasılık çıkar (ikili sınıflandırma varsayımı)."""
-    # predict_proba varsa: pozitif sınıfın (class 1) olasılığı
+    """Model tipine göre [0,1] aralığında olasılık üretir."""
     if hasattr(model, "predict_proba"):
-        proba = model.predict_proba(X)
-        if isinstance(proba, list):
-            proba = proba[0]
-        proba = np.asarray(proba)
-        # İkili sınıflandırmada sütun sayısı 2 olur; değilse en yüksek sınıfı alırız
-        if proba.ndim == 2 and proba.shape[1] >= 2:
-            return proba[:, 1]
-        else:
-            # Tek kolonlu ya da beklenmedik: güvenli düşüş
-            return proba.ravel().astype(float)
+        proba = np.asarray(model.predict_proba(X))
+        return proba[:, 1] if proba.ndim == 2 else proba.ravel()
 
-    # decision_function varsa: min-max ile [0,1] ölçekle
     if hasattr(model, "decision_function"):
-        s = model.decision_function(X).astype(float)
-        s_min, s_max = s.min(), s.max()
-        return (s - s_min) / (s_max - s_min + 1e-9)
+        s = model.decision_function(X)
+        return (s - s.min()) / (s.max() - s.min() + 1e-9)
 
-    # Aksi takdirde predict -> [0,1] varsayımı
     y = model.predict(X).astype(float)
-    # Eğer model 0/1 dönmüyorsa yine de [0,1] aralığına sıkıştır
-    y_min, y_max = y.min(), y.max()
-    if y_max - y_min > 1e-9:
-        y = (y - y_min) / (y_max - y_min)
-    return y
+    return (y - y.min()) / (y.max() - y.min() + 1e-9)
+
 
 def _pick_features_for_model(df: pd.DataFrame, model) -> List[str]:
-    """
-    Her modelin kendi beklediği kolonlarını yakala; yoksa makul varsayılanları kullan.
-    Bu sayede modeller farklı feature set'leriyle eğitilmiş olsa bile çalışır.
-    """
-    model_feats = getattr(model, "feature_names_in_", None)
-    if model_feats is not None:
-        feats = [c for c in model_feats if c in df.columns]
-        if len(feats) >= 1:
+    """Modelin beklediği kolonları bulur."""
+    feats = getattr(model, "feature_names_in_", None)
+    if feats is not None:
+        feats = [c for c in feats if c in df.columns]
+        if feats:
             return feats
+    return [c for c in CANDIDATE_FEATURES if c in df.columns]
 
-    # Ortak adaylar (Kepler/TESS benzeri transit verileri için makul kolon isimleri)
-    candidates = [
-        "st_teff", "st_logg", "st_rad",
-        "st_dist", "pl_orbper", "pl_trandurh",
-        "pl_trandep", "pl_rade", "pl_insool", "pl_eqt", "Rp_Rs"
-    ]
-    feats = [c for c in candidates if c in df.columns]
-    return feats
 
 def _ensure_matrix(df: pd.DataFrame, feats: List[str]) -> np.ndarray:
-    """Seçili kolonları sayısallaştır, NaN'leri doldur ve float matris döndür."""
-    X = df[feats].apply(pd.to_numeric, errors="coerce").fillna(0.0).to_numpy(dtype=float)
-    return X
+    """DataFrame’i modele uygun matris haline getirir."""
+    return df[feats].apply(pd.to_numeric, errors="coerce").fillna(0.0).to_numpy()
 
-def _borda_aggregate(prob_list: List[np.ndarray]) -> np.ndarray:
-    """
-    Borda: Her model, örnekleri kendi olasılığına göre (yüksek->iyi) sıralar.
-    n örnek için puanlar n-1 ... 0 dağıtılır; modeller arası toplanır ve [0,1] ölçeklenir.
-    """
-    if len(prob_list) == 1:
-        return prob_list[0]  # Tek model varsa doğrudan dön
-
-    n = prob_list[0].shape[0]
-    if n == 0:
-        return prob_list[0]
-
-    scores = np.zeros(n, dtype=float)
-    for probs in prob_list:
-        # Büyük olasılık -> yüksek sıra
-        order = np.argsort(-probs)  # azalan
-        # Borda puanı: en yüksek olasılık n-1, en düşük 0
-        borda_for_model = np.zeros(n, dtype=float)
-        for rank, idx in enumerate(order):
-            borda_for_model[idx] = (n - 1 - rank)
-        scores += borda_for_model
-
-    # Maks puan: model_sayısı * (n-1)
-    denom = len(prob_list) * max(n - 1, 1)
-    return scores / denom
 
 def _mean_aggregate(prob_list: List[np.ndarray]) -> np.ndarray:
+    """Modellerin ortalama olasılığını alır."""
     return np.mean(np.vstack(prob_list), axis=0)
 
-def _vote_aggregate(prob_list: List[np.ndarray], threshold: float) -> np.ndarray:
-    """Çoğunluk oyu: her model thresholde göre 0/1 oy verir → ortalama oy."""
-    votes = [(p >= threshold).astype(int) for p in prob_list]
-    return np.mean(np.vstack(votes), axis=0)
 
+# ==== ROUTES ====
 @app.get("/")
 def root():
-    return {"ok": True, "models_loaded": len(MODELS)}
+    """API'nin genel bilgilerini döner."""
+    try:
+        _ensure_models_loaded()
+        return {"ok": True, "models_loaded": len(MODELS)}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
 
 @app.get("/health")
 def health():
-    return {"status": "healthy", "models_loaded": len(MODELS)}
+    """Sağlık durumu (API ayakta mı?)"""
+    try:
+        _ensure_models_loaded()
+        return {"status": "healthy", "models_loaded": len(MODELS)}
+    except Exception as e:
+        return {"status": "error", "detail": str(e)}
+
 
 @app.post("/predict-csv")
 async def predict_csv(
-    file: UploadFile = File(...),
+    file: UploadFile = File(..., description=".csv formatında veri dosyası"),
     threshold: float = 0.5,
-    method: str = Query("borda", pattern="^(borda|mean|vote)$")  # 'borda' | 'mean' | 'vote'
+    method: str = Query("mean", pattern="^(mean)$", description="Model birleştirme yöntemi: mean (ortalama)")
 ):
-    # --- Dosya kontrolü ---
+    """
+    CSV dosyası yükleyin, her satır için gezegen olasılığını tahmin edin.
+    """
+    _ensure_models_loaded()
+
     if not file.filename.lower().endswith(".csv"):
         raise HTTPException(status_code=400, detail="Lütfen .csv dosyası yükleyin.")
 
-    content = await file.read()
     try:
+        content = await file.read()
         df = pd.read_csv(io.BytesIO(content))
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"CSV okunamadı: {e}")
 
-    if df.shape[0] == 0:
+    if df.empty:
         raise HTTPException(status_code=400, detail="CSV boş görünüyor.")
 
-    # --- Her model için uygun feature set'i seç ve olasılıkları hesapla ---
-    probs_all_models: List[np.ndarray] = []
-    features_used_per_model: List[List[str]] = []
+    # Her model için olasılıkları hesapla
+    probs_all_models = []
+    features_used_per_model = []
 
-    for i, model in enumerate(MODELS, start=1):
+    for model in MODELS:
         feats = _pick_features_for_model(df, model)
-        if len(feats) == 0:
-            raise HTTPException(
-                status_code=400,
-                detail=(
-                    f"Model {i} için uygun özellik bulunamadı. CSV içinde şunlardan bazıları olmalı: "
-                    "depth_ppm, transit_depth, snr, planet_radius, orbital_period, duration_hours, duration, period"
-                ),
-            )
+        if not feats:
+            raise HTTPException(status_code=400, detail="Uygun kolon bulunamadı.")
         X = _ensure_matrix(df, feats)
         p = _as_probability(model, X)
-        if p.ndim > 1:
-            p = p.ravel()
-        probs_all_models.append(p.astype(float))
+        probs_all_models.append(p)
         features_used_per_model.append(feats)
 
-    # --- Birleştirme (ensemble) ---
-    if method == "borda":
-        combined = _borda_aggregate(probs_all_models)
-    elif method == "mean":
-        combined = _mean_aggregate(probs_all_models)
-    elif method == "vote":
-        combined = _vote_aggregate(probs_all_models, float(threshold))
-    else:
-        raise HTTPException(status_code=400, detail="Geçersiz method parametresi.")
+    combined = _mean_aggregate(probs_all_models)
+    combined = np.clip(combined, 0, 1)
+    preds = (combined >= threshold).astype(int)
 
-    # Güvenlik: [0,1] aralığına sıkıştır
-    combined = np.clip(combined, 0.0, 1.0)
-
-    preds = (combined >= float(threshold)).astype(int)
-
-    rows = [
-        {
-            "i": int(i),
-            "prob": float(combined[i]),
-            "label": int(preds[i]),
-            # İstersen model başına olasılıkları da göster:
-            "models": {f"m{j+1}": float(probs_all_models[j][i]) for j in range(len(probs_all_models))}
-        }
+    # Sonuçları JSON formatında döndür
+    results = [
+        {"id": i, "probability": float(combined[i]), "prediction": int(preds[i])}
         for i in range(len(combined))
     ]
 
     summary = {
-        "n": int(len(rows)),
+        "total_rows": len(results),
         "positives": int(preds.sum()),
         "negatives": int((preds == 0).sum()),
-        "threshold": float(threshold),
-        "method": method,
+        "threshold": threshold,
         "models_loaded": len(MODELS),
         "features_used_per_model": features_used_per_model,
     }
 
-    return {"summary": summary, "rows": rows}
+    return {"summary": summary, "results": results}
